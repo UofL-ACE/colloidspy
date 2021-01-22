@@ -7,7 +7,7 @@ Colloidspy incorporates robust filters, edge detection, and contour description 
 It is designed to be used alongside pandas and numpy to control structuring and export of data.
 
 ## Example
-'''python
+```python
 import colloidspy as cspy
 import skimage.io as io
 import numpy as np
@@ -38,5 +38,5 @@ overall_df = analyze_exp(cleaned_stack, im_titles, cluster_dfs=False, save_dfs=T
 
 # finally, to run the version of the analysis that worked for the system this package was designed for:
 run_analysis(exp_dir, imtype='bmp', min_imgs=0, im_namer=None, block_size=71, offset=5, min_distance=7)
-'''
+```
 
