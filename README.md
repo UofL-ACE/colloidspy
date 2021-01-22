@@ -2,7 +2,8 @@
 
 This python package is designed to assist in analyzing confocal images of colloidal systems.
 The motivation for the package arose when attempting to analyze hundreds of images for NASA's Advanced Colloids Experiments (ACE).
-The lack of robust, flexible, automated methods to analyze large stacks of images of highly dense colloidal systems blocked the ability to extract meaning and accurate results from one of the experiments conducted on the ISS in 2016 without creating new a new analysis tool.
+The lack of robust, flexible, automated methods to analyze large stacks of images of highly dense colloidal systems blocked the ability to extract meaningful and accurate results from one of the experiments conducted on the ISS in 2016 without creating new a new analysis tool.
+
 Colloidspy incorporates robust filters, edge detection, and contour description from scikit-image and opencv python packages, and bundles them into convenient functions that can be used to extract 2D cluster data from colloidal settling images with a minimal learning curve.
 It is designed to be used alongside pandas and numpy to control structuring and export of data.
 
