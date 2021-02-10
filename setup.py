@@ -14,14 +14,14 @@ requirements = [
     ]
 
 setuptools.setup(
-    name="colloidspy-ajcecil64", # Replace with your own username
-    version="2021.01",
+    name="colloidspy",
+    version="2021.02",
     author="Adam Cecil",
     author_email="ajcecil64@gmail.com",
     description="2D colloidal image analysis",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/ajcecil64/colloidspy",
+    url="https://github.com/UofL-ACE/colloidspy",
     license='LICENSE.txt',
     packages=setuptools.find_packages(),
     install_requires=requirements,
@@ -32,3 +32,4 @@ setuptools.setup(
     ],
     python_requires='>=3.6',
 )
+

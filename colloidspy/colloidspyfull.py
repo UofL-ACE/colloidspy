@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 2D Colloids Image Analysis Program
+Original file - new is separated into modules
 Created by Adam Cecil, University of Louisville, 2021
 """
 
@@ -510,7 +511,7 @@ def NASA_settling_time(im_name):
     return t_settling
 
 
-def run_analysis(exp_dir, imtype='bmp', min_imgs=0, im_namer=None, block_size=71, offset=5, min_distance=7):
+def default_analysis(exp_dir, imtype='bmp', min_imgs=0, im_namer=None, block_size=71, offset=5, min_distance=7):
     """
     Runs full analysis on all images in nested folders.
     Saves images of clusters and corresponding csv's into each folder with images.
@@ -582,7 +583,7 @@ def run_analysis(exp_dir, imtype='bmp', min_imgs=0, im_namer=None, block_size=71
                 clean_rois = clean_imgs(binary_rois)
 
                 # Analyze the well
-                overall_df = analyze_exp(clean_rois, im_titles, save_dfs=True, save_ims=True, save_dir=entry, min_distance)
+                overall_df = analyze_exp(clean_rois, im_titles, save_dfs=True, save_ims=True, save_dir=entry, min_distance=7)
 
                 exp_df = pd.merge(exp_df, overall_df, on='Image name')
                 exp_df.to_csv(os.path.join(entry, exp + ' Data.csv'))
