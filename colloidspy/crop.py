@@ -1,3 +1,10 @@
+import numpy as np
+import skimage.io as io
+import matplotlib.pyplot as plt
+from matplotlib.widgets import RectangleSelector
+from skimage.util import img_as_ubyte
+
+
 def crop_imgs(img_stack):
     """
     :param img_stack:
@@ -21,6 +28,30 @@ def crop_imgs(img_stack):
             print(' RectangleSelector activated.')
             toggle_selector.RS.set_active(True)
 
+    def select_roi(img):
+        fig, current_ax = plt.subplots()
+        plt.title("Select ROI, press any key to continue.")
+        plt.imshow(img, cmap='gray')  # show the first image in the stack
+        toggle_selector.RS = RectangleSelector(current_ax, line_select_callback,
+                                               drawtype='box', useblit=True,
+                                               button=[1, 3],  # don't use middle button
+                                               minspanx=5, minspany=5,
+                                               spancoords='pixels',
+                                               interactive=True)
+        plt.connect('key_press_event', toggle_selector)
+        plt.show()
+        keyboardClick = False
+        while keyboardClick != True:
+            keyboardClick = plt.waitforbuttonpress()
+        plt.close(fig)
+
+    if type(img_stack) != io.collection.ImageCollection:
+        try:
+            img_stack = np.array(img_stack)
+        except TypeError:
+            print("Please pass a skimage image collection or a numpy array.")
+            exit
+
     if type(img_stack) == io.collection.ImageCollection or len(img_stack.shape) == 3:
         img = img_as_ubyte(img_stack[0])
     elif len(img_stack.shape) == 2:
@@ -28,16 +59,7 @@ def crop_imgs(img_stack):
     else:
         raise TypeError
 
-    fig, current_ax = plt.subplots()
-    plt.imshow(img, cmap='gray')  # show the first image in the stack
-    toggle_selector.RS = RectangleSelector(current_ax, line_select_callback,
-                                           drawtype='box', useblit=True,
-                                           button=[1, 3],  # don't use middle button
-                                           minspanx=5, minspany=5,
-                                           spancoords='pixels',
-                                           interactive=True)
-    plt.connect('key_press_event', toggle_selector)
-    plt.show()
+    select_roi(img)
 
     # Crop all images in the stack
     # Numpy's axis convention is (y,x) or (row,col)
@@ -47,7 +69,7 @@ def crop_imgs(img_stack):
         img_rois = np.asarray(
             [img_stack[i][tpleft[0]:btmright[0], tpleft[1]:btmright[1]] for i in range(len(img_stack))])
     elif len(img_stack.shape) == 2:
-        img_rois = img_stack[tpleft[0]:btmright[0], tpleft[1]:btmright[1]]
+        img_rois = np.array(img_stack[tpleft[0]:btmright[0], tpleft[1]:btmright[1]])
     else:
         raise TypeError
 
@@ -62,6 +84,7 @@ def cv_image_cropper(img_stack):
     :param img_stack: skimage image collection or numpy array.
     :return: numpy array of cropped images.
     """
+    import cv2
 
     def on_mouse(event, x, y, flags, params):
         """
@@ -117,7 +140,7 @@ def cv_image_cropper(img_stack):
         img_rois = np.asarray(
             [img_stack[i][tpleft[1]:btmright[1], tpleft[0]:btmright[0]] for i in range(len(img_stack))])
     elif len(img_stack.shape) == 2:
-        img_rois = img_stack[tpleft[1]:btmright[1], tpleft[0]:btmright[0]]
+        img_rois = np.array(img_stack[tpleft[1]:btmright[1], tpleft[0]:btmright[0]])
     else:
         raise TypeError
 

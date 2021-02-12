@@ -1,3 +1,9 @@
+import numpy as np
+import skimage.filters as filters
+import skimage.io as io
+from scipy import ndimage
+
+
 def loc_threshold(img_stack, block_size=71, offset=5, cutoff=0, method='gaussian'):
     """
     :param img_stack: skimage image collection or numpy array.
@@ -23,7 +29,7 @@ def loc_threshold(img_stack, block_size=71, offset=5, cutoff=0, method='gaussian
         local_thresh[low_val_flags] = 255
         binary_stack = img_stack > local_thresh
 
-    return binary_stack
+    return np.array(binary_stack)
 
 
 def otsu_threshold(img_stack, nbins=256):
@@ -44,7 +50,7 @@ def otsu_threshold(img_stack, nbins=256):
         otsu = filters.threshold_otsu(img_stack, nbins=nbins)
         binary_stack = img_stack[i] > otsu
 
-    return binary_stack
+    return np.array(binary_stack)
 
 
 def clean_imgs(stack):
@@ -63,4 +69,4 @@ def clean_imgs(stack):
         clean_stack = ndimage.binary_closing(ndimage.binary_opening(stack))
     else:
         raise TypeError
-    return clean_stack
+    return np.array(clean_stack)
