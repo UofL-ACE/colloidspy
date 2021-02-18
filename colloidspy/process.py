@@ -53,6 +53,19 @@ def otsu_threshold(img_stack, nbins=256):
     return np.array(binary_stack)
 
 
+def hysteresis_theshold(img_stack, low=20, high=150):
+    try:
+        binary_stack = []
+        for i in range(len(img_stack)):
+            hyst = filters.apply_hysteresis_threshold(img_stack[i], low, high)
+            binary_stack.append(hyst)
+    except ValueError:
+        # value error probably means user fed a single image instead of a stack
+        binary_stack = filters.apply_hysteresis_threshold(img_stack, low, high)
+
+    return np.array(binary_stack)
+
+
 def clean_imgs(stack):
     """
     Removes single-pixel particles and gritty imperfections from a stack of binary images.
