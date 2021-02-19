@@ -57,28 +57,40 @@ def view_clusters(img, blobs):
 
 def structure_factor(img):
     """
-    Does NOT return true structure factor, but can be used to calculate it.
+    Calculates the squared intensity of the DFT of an image.
     :param img:
-    :return: list: radial average of the square of the 2D fourier transform of the image over wavenumber.
+    :return: list: DFT intensity squared over spatial frequency in 1/px
     """
-
-    # Take 2D FFT, shift it to center
-    H, W = np.shape(img)
-    f = np.fft.fft2(img)
-    fshift = np.fft.fftshift(img)
-    fsquare = fshift ** 2
+    import scipy.misc as spm
+    from scipy.signal import medfilt
+    from scipy import signal
 
     def radial_profile(data, center):
-        y, x = np.indices((data.shape))
+        """
+        Returns the sum of pixel values as a function of radius from the center of the given DFT.
+        Created by Ben King, UofL, 2016
+        """
+        y, x = np.indices(data.shape)  # first determine radii of all pixels
         r = np.sqrt((x - center[0]) ** 2 + (y - center[1]) ** 2)
-        r = r.astype(np.int)
-
-        tbin = np.bincount(r.ravel(), data.ravel())
-        nr = np.bincount(r.ravel())
-        radialprofile = tbin / nr
+        ind = np.argsort(r.flat)  # get sorted indices
+        sr = r.flat[ind]  # sorted radii
+        sim = data.flat[ind]  # image values sorted by radii
+        ri = sr.astype(np.int32)  # integer part of radii (bin size = 1)
+        # determining distance between changes
+        deltar = ri[1:] - ri[:-1]  # assume all radii represented
+        rind = np.where(deltar)[0]  # location of changed radius
+        nr = rind[1:] - rind[:-1]  # number in radius bin
+        csim = np.cumsum(sim, dtype=np.float64)  # cumulative sum to figure out sums for each radii bin
+        tbin = csim[rind[1:]] - csim[rind[:-1]]  # sum for image values in radius bins
+        radialprofile = tbin / nr  # the answer
         return radialprofile
 
-    sfactor = radial_profile(np.abs(fsquare), (H / 2, W / 2))
+    H, W = np.shape(img)
+    image_dft = np.fft.fft2(img)
+    radpro = radial_profile(np.log(np.abs(np.fft.fftshift(image_dft))), (H/2, W/2))
+    sos = signal.ellip(1, 0.009, 80, 0.015, output='sos')
+    # sfactor = np.exp(signal.sosfilt(sos, radpro))
+    sfactor = signal.sosfilt(sos, radpro)
 
     return sfactor
 
