@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import cv2
+import skimage.io as io
 from skimage.util import img_as_ubyte
 from skimage.feature import peak_local_max
 from skimage.segmentation import watershed
@@ -221,12 +222,12 @@ def analyze_exp(stack, im_titles, cluster_dfs=None, save_dfs=False, save_ims=Fal
             # if the user wants to save the dataframes and clusters
             if save_ims == True:
                 try:
-                    io.imsave(os.path.join(save_dir, "Clusters", "") + str(im_titles) + '.', imtype, img_as_ubyte(clusters))
+                    io.imsave(os.path.join(save_dir, "Clusters", "") + str(im_titles[i]) + '.', imtype, img_as_ubyte(clusters))
                 except (NameError, ValueError, FileNotFoundError):
                     print('Please provide valid directory for the images to be saved to.')
             if save_dfs == True:
                 try:
-                    cluster_df.to_csv(os.path.join(save_dir, str(im_titles) + '.csv'))
+                    cluster_df.to_csv(os.path.join(save_dir, str(im_titles[i]) + '.csv'))
                 except (NameError, ValueError, FileNotFoundError):
                     print('Please provide valid directory for the dataframes to be saved to.')
         # if the user did pass a list of dataframes
