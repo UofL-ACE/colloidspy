@@ -15,7 +15,7 @@ requirements = [
 
 setuptools.setup(
     name="colloidspy",
-    version="2021.02",
+    version="2021.03",
     author="Adam Cecil",
     author_email="ajcecil64@gmail.com",
     description="2D colloidal image analysis",

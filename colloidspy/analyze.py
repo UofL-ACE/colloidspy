@@ -133,11 +133,10 @@ def analyze_clusters(img, blobs):
         M = cv2.moments(cnts[0], 0)
         if cl_area[-1] != 0:
             cl_center.append(tuple([int(M['m10'] / M['m00']), int(M['m01'] / M['m00'])]))
+            cl_circularity.append(4 * np.pi * (cv2.contourArea(cnts[0])) / (cv2.arcLength(cnts[0], 1) ** 2))
         else:
             cl_center.append("None")
-
-        # calculate circularity
-        cl_circularity.append(4 * np.pi * (cv2.contourArea(cnts[0])) / (cv2.arcLength(cnts[0], 1) ** 2))
+            cl_circularity.append("None")
 
         # find the convex hull of the particle, and extract the defects
         cnt = cnts[0]
@@ -183,7 +182,7 @@ def analyze_clusters(img, blobs):
     return img_as_ubyte(clusters), cluster_df
 
 
-def analyze_exp(stack, im_titles, cluster_dfs=None, save_dfs=False, save_ims=False, save_dir=None, imtype='bmp', min_distance=7):
+def analyze_exp(stack, im_titles, cluster_dfs=None, save_dfs=False, save_ims=False, save_dir=None, imtype='tiff', min_distance=7):
     """
     :param stack: skimage image collection of numpy array of images to be analyzed.
     :param im_titles: list of names of the images; each must be unique.
@@ -222,7 +221,8 @@ def analyze_exp(stack, im_titles, cluster_dfs=None, save_dfs=False, save_ims=Fal
             # if the user wants to save the dataframes and clusters
             if save_ims == True:
                 try:
-                    io.imsave(os.path.join(save_dir, "Clusters", "") + str(im_titles[i]) + '.', imtype, img_as_ubyte(clusters))
+                    Path(str(save_dir) + '/Clusters').mkdir(parents=True, exist_ok=True)
+                    io.imsave(os.path.join(save_dir, "Clusters", im_titles[i] + '.' + imtype), img_as_ubyte(clusters))
                 except (NameError, ValueError, FileNotFoundError):
                     print('Please provide valid directory for the images to be saved to.')
             if save_dfs == True:
@@ -280,7 +280,7 @@ def analyze_exp(stack, im_titles, cluster_dfs=None, save_dfs=False, save_ims=Fal
     return well_df
 
 
-def default_analysis(exp_dir, imtype='bmp', min_imgs=0, im_namer=None, block_size=71, offset=5, min_distance=7):
+def default_analysis(exp_dir, imtype='tiff', min_imgs=0, im_namer=None, block_size=71, offset=5, min_distance=7):
     """
     Runs full analysis on all images in nested folders.
     Saves images of clusters and corresponding csv's into each folder with images.
@@ -292,16 +292,6 @@ def default_analysis(exp_dir, imtype='bmp', min_imgs=0, im_namer=None, block_siz
     :param offset: see loc_threshold
     :param min_distance: see loc_threshold
     :return:
-    """
-
-    """
-    Runs full analysis on all images in nexted folders
-    Saves images of clusters and corresponding csv's into each folder with images.
-    Arguments:
-        exp_dir - full directory to main folder with experimental images.
-        imtype - type of image; eg. bmp, jpg, png.
-        min_imgs - minimum number of images in a folder to be analyzed. Default is 0.
-        im_namer - UDF to assign titles to an image. Default will name images 0 to length of stack in order of analysis.
     """
 
     for entry in exp_dir.iterdir():
@@ -356,5 +346,3 @@ def default_analysis(exp_dir, imtype='bmp', min_imgs=0, im_namer=None, block_siz
 
                 exp_df = pd.merge(exp_df, overall_df, on='Image name')
                 exp_df.to_csv(os.path.join(entry, exp + ' Data.csv'))
-
-            run_analysis(entry)
