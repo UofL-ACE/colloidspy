@@ -96,11 +96,12 @@ def structure_factor(img):
     return sfactor
 
 
-def analyze_clusters(img, blobs):
+def analyze_clusters(img, blobs, min_area=0):
     """
     Analyzes the clusters in a single image.
     :param img: single image with the clusters
     :param blobs: blobs obtained from img_watershed.
+    :param min_area: minimum cluster area to be considered a cluster
     :return: tuple - (image of clusters, pandas dataframe of cluster data)
     """
 
@@ -127,6 +128,8 @@ def analyze_clusters(img, blobs):
             cnts, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         except ValueError:
             ct_im, cnts, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if cv2.contourArea(cnts[0]) < min_area:
+            continue
         cv2.drawContours(clusters, cnts, 0, 255, -1)
         cl_area.append(cv2.contourArea(cnts[0]))
         cl_perimeter.append(cv2.arcLength(cnts[0], 1))
@@ -187,9 +190,9 @@ def analyze_exp(stack, im_titles, cluster_dfs=None, save_dfs=False, save_ims=Fal
     :param stack: skimage image collection of numpy array of images to be analyzed.
     :param im_titles: list of names of the images; each must be unique.
     :param cluster_dfs: (optional) list of all cluster dataframes from analyze_clusters.
-    :param save_dfs: (optional) save the individual cluster dataframes.
-    :param save_ims: (optional) save the binary cluster images.
-    :param save_dir: (optional) directory to save dataframes and clusters to. Required if save_df and/or save_ims = True
+    :param save_dfs: (optional) save the individual cluster dataframes. Not available if cluster_dfs != None
+    :param save_ims: (optional) save the binary cluster images. Not available if cluster_dfs != None
+    :param save_dir: (optional) directory to save dataframes and clusters to. Required if save_df or save_ims == True
     :return: pandas dataframe of overall cluster statistics for the experiment.
     Note: images saved using this function will attempt to save them into a '/Clusters/' folder.
     """
@@ -219,13 +222,13 @@ def analyze_exp(stack, im_titles, cluster_dfs=None, save_dfs=False, save_ims=Fal
             # analyze the clusters
             clusters, cluster_df = analyze_clusters(stack[i], blobs)
             # if the user wants to save the dataframes and clusters
-            if save_ims == True:
+            if save_ims:
                 try:
                     Path(str(save_dir) + '/Clusters').mkdir(parents=True, exist_ok=True)
                     io.imsave(os.path.join(save_dir, "Clusters", im_titles[i] + '.' + imtype), img_as_ubyte(clusters))
                 except (NameError, ValueError, FileNotFoundError):
                     print('Please provide valid directory for the images to be saved to.')
-            if save_dfs == True:
+            if save_dfs:
                 try:
                     cluster_df.to_csv(os.path.join(save_dir, str(im_titles[i]) + '.csv'))
                 except (NameError, ValueError, FileNotFoundError):
