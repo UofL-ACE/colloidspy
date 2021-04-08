@@ -30,14 +30,15 @@ def img_watershed(img, min_distance=7):
     return labels
 
 
-def view_clusters(img, blobs):
+def view_clusters(img, blobs, min_area=0):
     """
     :param img: single image.
     :param blobs: blobs taken from img_watershed.
     :return: RGB image of clusters detected by img_watershed.
     """
 
-    clusters = cv2.cvtColor(np.zeros(img.shape, np.uint8), cv2.COLOR_GRAY2RGB)
+    # clusters = cv2.cvtColor(np.zeros(img.shape, np.uint8), cv2.COLOR_GRAY2RGB)
+    clusters = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
     for particle in np.unique(blobs):
         # if the label is zero, we are examining the 'background', so ignore it
         if particle == 0:
@@ -50,9 +51,10 @@ def view_clusters(img, blobs):
             cnts, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         except ValueError:
             ct_im, cnts, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if cv2.contourArea(cnts[0]) < min_area:
+            continue
         cv2.drawContours(clusters, cnts, 0, (255, 255, 255), -1)
         cv2.drawContours(clusters, cnts, 0, (255, 0, 0), 0)
-
     return clusters
 
 
@@ -176,7 +178,7 @@ def analyze_clusters(img, blobs, min_area=0):
                     'Center': cl_center,
                     'Circularity': cl_circularity,
                     'Average Defect Length': defect_len_avg,
-                    'Stdev of Devect Length': defect_len_std,
+                    'Stdev of Defect Length': defect_len_std,
                     'Min Defect Length': defect_len_min,
                     'Max Defect Length': defect_len_max
                     }
