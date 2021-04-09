@@ -36,9 +36,10 @@ def view_clusters(img, blobs, min_area=0):
     :param blobs: blobs taken from img_watershed.
     :return: RGB image of clusters detected by img_watershed.
     """
-
-    # clusters = cv2.cvtColor(np.zeros(img.shape, np.uint8), cv2.COLOR_GRAY2RGB)
-    clusters = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+    if 'bool' in str(type(img[0][0])):
+        clusters = cv2.cvtColor(np.zeros(img.shape, np.uint8), cv2.COLOR_GRAY2RGB)
+    else:
+        clusters = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
     for particle in np.unique(blobs):
         # if the label is zero, we are examining the 'background', so ignore it
         if particle == 0:
