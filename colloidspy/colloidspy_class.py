@@ -13,9 +13,13 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import cv2
 import skimage.io as io
 import skimage.filters as filters
 from skimage.util import img_as_ubyte
+from skimage.feature import peak_local_max
+from skimage.segmentation import watershed
+from scipy import ndimage, stats
 import matplotlib.pyplot as plt
 from matplotlib.widgets import RectangleSelector
 from scipy import ndimage
@@ -24,72 +28,7 @@ from scipy import ndimage
 
 def load(path, conserve_memory=True):
     stack = io.ImageCollection(path, conserve_memory=conserve_memory)
-    return stack, stack.files
-
-def crop(img_stack):
-    """
-    :param img_stack:
-    :return: stack of cropped images as numpy array
-    When rectangle has been selected, close the plot. Confirmed to work with PyQT5.
-    """
-    def line_select_callback(eclick, erelease):
-        global x1, y1, x2, y2
-        x1, y1 = eclick.xdata, eclick.ydata
-        x2, y2 = erelease.xdata, erelease.ydata
-        print("(%3.2f, %3.2f) --> (%3.2f, %3.2f)" % (x1, y1, x2, y2))
-        print(" The button you used were: %s %s" % (eclick.button, erelease.button))
-
-    def toggle_selector(event):
-        print(' Key pressed.')
-        if event.key in ['Q', 'q'] and toggle_selector.RS.active:
-            print(' RectangleSelector deactivated.')
-            toggle_selector.RS.set_active(False)
-        if event.key in ['A', 'a'] and not toggle_selector.RS.active:
-            print(' RectangleSelector activated.')
-            toggle_selector.RS.set_active(True)
-
-    def select_roi(img):
-        fig, current_ax = plt.subplots()
-        plt.title("Select ROI, press any key to continue.")
-        plt.imshow(img, cmap='gray')  # show the first image in the stack
-        toggle_selector.RS = RectangleSelector(current_ax, line_select_callback,
-                                               drawtype='box', useblit=True,
-                                               button=[1, 3],  # don't use middle button
-                                               minspanx=5, minspany=5,
-                                               spancoords='pixels',
-                                               interactive=True)
-        plt.connect('key_press_event', toggle_selector)
-        plt.show()
-        keyboardClick = False
-        while keyboardClick != True:
-            keyboardClick = plt.waitforbuttonpress()
-        plt.close(fig)
-
-    img_stack = cspy_stack(img_as_ubyte(img_stack))
-
-    if len(img_stack.shape) == 3:
-        img = img_stack[0]
-    elif len(img_stack.shape) == 2:
-        img = img_stack
-    else:
-        raise TypeError
-
-    select_roi(img)
-
-    # Crop all images in the stack
-    # Numpy's axis convention is (y,x) or (row,col)
-    tpleft = [int(y1), int(x1)]
-    btmright = [int(y2), int(x2)]
-    if len(img_stack.shape) == 3:
-        img_rois = cspy_stack(
-            [img_stack[i][tpleft[0]:btmright[0], tpleft[1]:btmright[1]] for i in range(len(img_stack))])
-    elif len(img_stack.shape) == 2:
-        img_rois = cspy_stack(img_stack[tpleft[0]:btmright[0], tpleft[1]:btmright[1]])
-    else:
-        raise TypeError
-
-    del x1, y1, x2, y2
-    return img_rois
+    return img_as_ubyte(stack), stack.files
 
 
 class cspy_stack(np.ndarray):
@@ -259,20 +198,64 @@ class cspy_stack(np.ndarray):
         if len(self.shape) == 3:
             self.cleaned = []
             for i in range(len(self)):
-                self.cleaned.append(ndimage.binary_closing(ndimage.binary_opening(bin_stack[i])))
+                self.cleaned.append(cspy_stack(ndimage.binary_closing(ndimage.binary_opening(bin_stack[i]))))
         elif len(self.shape) == 2:
-            self.cleaned = ndimage.binary_closing(ndimage.binary_opening(bin_stack))
+            self.cleaned = cspy_stack(ndimage.binary_closing(ndimage.binary_opening(bin_stack)))
         else:
             raise Exception
 
+    def find_particles(self, bin_stack, min_distance=7):
+        if type(bin_stack) == list or len(bin_stack.shape) == 3:
+            self.particles = []
+            for i in range(len(bin_stack)):
+                D = ndimage.distance_transform_edt(bin_stack[i])
+                localMax = peak_local_max(D, indices=False, min_distance=min_distance, labels=bin_stack[i])
+                markers = ndimage.label(localMax, structure=np.ones((3, 3)))[0]
+                labels = cspy_stack(watershed(-D, markers, mask=bin_stack[i]))
+                self.particles.append(labels)
+        elif len(bin_stack.shape) == 2:
+            D = ndimage.distance_transform_edt(bin_stack)
+            localMax = peak_local_max(D, indices=False, min_distance=min_distance, labels=bin_stack)
+            markers = ndimage.label(localMax, structure=np.ones((3, 3)))[0]
+            labels = watershed(-D, markers, mask=bin_stack)
+            self.particles = cspy_stack(labels)
+        else:
+            raise Exception
+
+    def view_particles(self, img, particles, min_area=0, fill=False):
+        if 'bool' in str(type(img[0][0])):
+            clusters = cv2.cvtColor(np.zeros(img.shape, np.uint8), cv2.COLOR_GRAY2RGB)
+        else:
+            clusters = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+        for particle in np.unique(particles):
+            # if the label is zero, we are examining the 'background', so ignore it
+            if particle == 0:
+                continue
+            # otherwise, allocate memory for the label region and draw it on the mask
+            mask = np.zeros(img.shape, np.uint8)
+            mask[particles == particle] = 255
+            # detect contours in the mask and grab the largest one
+            try:
+                cnts, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            except ValueError:
+                ct_im, cnts, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if cv2.contourArea(cnts[0]) < min_area:
+                continue
+            if fill:
+                cv2.drawContours(clusters, cnts, 0, (255, 255, 255), -1)
+                cv2.drawContours(clusters, cnts, 0, (255, 0, 0), 0)
+            else:
+                cv2.drawContours(clusters, cnts, 0, (255, 0, 0), 0)
+        return clusters
 
 if __name__ == '__main__':
     os.chdir('C:/Users/Adam/OneDrive - University of Louisville/School/Masters Thesis/0.01 Temp6')
-    stack = cspy_stack(*load('*.tif'))
+    stack = cspy_stack(*load('1 hour.tif'))
     stack.add_cropped()
-    stack.add_otsu()
-    stack.add_local_threshold()
-    stack.add_hysteresis_threshold()
+    stack.add_local_threshold(block_size=31)
     stack.add_cleaned(stack.binary_loc)
+    stack.find_particles(stack.cleaned, min_distance=3)
+    io.imshow(stack.view_particles(stack.cropped[0], stack.particles[0]))
+
 
 
