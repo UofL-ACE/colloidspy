@@ -23,6 +23,7 @@ from scipy import ndimage, stats
 import matplotlib.pyplot as plt
 from matplotlib.widgets import RectangleSelector
 from scipy import ndimage
+from tqdm import tqdm
 
 
 def load(path, conserve_memory=True):
@@ -134,10 +135,11 @@ class cspy_stack(np.ndarray):
         if self.cropped is None:
             if len(self.shape) == 3:
                 self.binary_otsu = []
-                for i in range(len(self)):
+                for i in tqdm(range(len(self)), desc='Applying otsu threshold to cspy_stack.binary_otsu', leave=True):
                     otsu = filters.threshold_otsu(self[i], nbins=nbins)
                     self.binary_otsu.append(self[i] > otsu)
             elif len(self.shape) == 2:
+                print('Applying otsu threshold to cspy_stack.binary_otsu')
                 otsu = filters.threshold_otsu(self, nbins=nbins)
                 self.binary_otsu = self > otsu
             else:
@@ -145,10 +147,11 @@ class cspy_stack(np.ndarray):
         else:
             if len(self.shape) == 3:
                 self.binary_otsu = []
-                for i in range(len(self)):
+                for i in tqdm(range(len(self)), desc='Applying otsu threshold to cspy_stack.binary_otsu', leave=True):
                     otsu = filters.threshold_otsu(self.cropped[i], nbins=nbins)
                     self.binary_otsu.append(self.cropped[i] > otsu)
             elif len(self.shape) == 2:
+                print('Applying otsu threshold to cspy_stack.binary_otsu')
                 otsu = filters.threshold_otsu(self.cropped, nbins=nbins)
                 self.binary_otsu = self.cropped > otsu
             else:
@@ -158,12 +161,13 @@ class cspy_stack(np.ndarray):
         if self.cropped is None:
             if len(self.shape) == 3:
                 self.binary_loc = []
-                for i in range(len(self)):
+                for i in tqdm(range(len(self)), desc='Applying local threshold to cspy_stack.binary_loc', leave=True):
                     local_thresh = filters.threshold_local(self[i], block_size=block_size, offset=offset, **kwargs)
                     low_val_flags = local_thresh < cutoff
                     local_thresh[low_val_flags] = 255
                     self.binary_loc.append(self[i] > local_thresh)
             elif len(self.shape) == 2:
+                print('Applying local threshold to cspy_stack.binary_loc')
                 local_thresh = filters.threshold_local(self, block_size=block_size, offset=offset, **kwargs)
                 low_val_flags = local_thresh < cutoff
                 local_thresh[low_val_flags] = 255
@@ -173,12 +177,13 @@ class cspy_stack(np.ndarray):
         else:
             if len(self.shape) == 3:
                 self.binary_loc = []
-                for i in range(len(self)):
+                for i in tqdm(range(len(self)), desc='Applying local threshold to cspy_stack.binary_loc', leave=True):
                     local_thresh = filters.threshold_local(self.cropped[i], block_size=block_size, offset=offset, **kwargs)
                     low_val_flags = local_thresh < cutoff
                     local_thresh[low_val_flags] = 255
                     self.binary_loc.append(self.cropped[i] > local_thresh)
             elif len(self.shape) == 2:
+                print('Applying local threshold to cspy_stack.binary_loc')
                 local_thresh = filters.threshold_local(self.cropped, block_size=block_size, offset=offset, **kwargs)
                 low_val_flags = local_thresh < cutoff
                 local_thresh[low_val_flags] = 255
@@ -190,18 +195,22 @@ class cspy_stack(np.ndarray):
         if self.cropped is None:
             if len(self.shape) == 3:
                 self.binary_hyst = []
-                for i in range(len(self)):
+                for i in tqdm(range(len(self)),
+                              desc='Applying hysteresis threshold to cspy_stack.binary_hyst', leave=True):
                     self.binary_hyst.append(filters.apply_hysteresis_threshold(self[i], low=low, high=high))
             elif len(self.shape) == 2:
+                print('Applying hysteresis threshold to cspy_stack.binary_hyst')
                 self.binary_hyst = filters.apply_hysteresis_threshold(self, low=low, high=high)
             else:
                 raise Exception
         else:
             if len(self.shape) == 3:
                 self.binary_hyst = []
-                for i in range(len(self)):
+                for i in tqdm(range(len(self)),
+                              desc='Applying hysteresis threshold to cspy_stack.binary_hyst', leave=True):
                     self.binary_hyst.append(filters.apply_hysteresis_threshold(self.cropped[i], low=low, high=high))
             elif len(self.shape) == 2:
+                print('Applying hysteresis threshold to cspy_stack.binary_hyst')
                 self.binary_hyst = filters.apply_hysteresis_threshold(self.cropped, low=low, high=high)
             else:
                 raise Exception
@@ -209,9 +218,10 @@ class cspy_stack(np.ndarray):
     def add_cleaned(self, bin_stack):
         if len(self.shape) == 3:
             self.cleaned = []
-            for i in range(len(self)):
+            for i in tqdm(range(len(self)), desc='Adding cleaned to cspy_stack.cleaned', leave=True):
                 self.cleaned.append(cspy_stack(ndimage.binary_closing(ndimage.binary_opening(bin_stack[i]))))
         elif len(self.shape) == 2:
+            print('Adding cleaned to cspy_stack.cleaned')
             self.cleaned = cspy_stack(ndimage.binary_closing(ndimage.binary_opening(bin_stack)))
         else:
             raise Exception
@@ -219,13 +229,14 @@ class cspy_stack(np.ndarray):
     def find_particles(self, bin_stack, min_distance=7):
         if type(bin_stack) == list or len(bin_stack.shape) == 3:
             self.particles = []
-            for i in range(len(bin_stack)):
+            for i in tqdm(range(len(bin_stack)), desc='Adding detected particles to cspy_stack.particles', leave=True):
                 D = ndimage.distance_transform_edt(bin_stack[i])
                 localMax = peak_local_max(D, indices=False, min_distance=min_distance, labels=bin_stack[i])
                 markers = ndimage.label(localMax, structure=np.ones((3, 3)))[0]
                 labels = cspy_stack(watershed(-D, markers, mask=bin_stack[i]))
                 self.particles.append(labels)
         elif len(bin_stack.shape) == 2:
+            print('Adding detected particles to cspy_stack.particles')
             D = ndimage.distance_transform_edt(bin_stack)
             localMax = peak_local_max(D, indices=False, min_distance=min_distance, labels=bin_stack)
             markers = ndimage.label(localMax, structure=np.ones((3, 3)))[0]
@@ -337,21 +348,22 @@ class cspy_stack(np.ndarray):
             cluster_df = pd.DataFrame(cluster_data)
             return img_as_ubyte(clusters), cluster_df
 
-        # need to choose how to store the images. Overwrite cleaned? New attribute? Return binary versions instead of
-        # assigning them to attributes? Only have one copy of binaries?
         if im == None:
+            # single returns BOTH the image of clusters and dataframe as a tuple
             if len(self.shape) == 3:
-                self.particle_data = list(zip(*[single(self.cleaned[i], self.particles[i], min_area=min_area)
-                                      for i in range(len(self))]))
+                self.particle_data = [single(self.cleaned[i], self.particles[i], min_area=min_area)[1]
+                                      for i in tqdm(range(len(self)), desc='Populating cspy_stack.particle_data', leave=True)]
             elif len(self.shape) == 2:
+                print('Populating cspy_stack.particle_data')
                 self.particle_data = single(self.cleaned)[1]
             else:
                 raise Exception
         else:
             if len(im) == 3:
-                self.particle_data = list(zip(*[single(self.cleaned[i], self.particles[i], min_area=min_area)
-                                      for i in range(len(self))]))
+                self.particle_data = [single(self.cleaned[i], self.particles[i], min_area=min_area)[1]
+                                      for i in tqdm(range(len(self)), desc='Populating cspy_stack.particle_data', leave=True)]
             elif len(self.shape) == 2:
+                print('Populating cspy_stack.particle_data')
                 self.particle_data = single(self.cleaned)
             else:
                 raise Exception
@@ -378,10 +390,7 @@ class cspy_stack(np.ndarray):
         if self.particles == None:
             self.find_particles(self.cleaned)
 
-
-
-        for i in tqdm(range(len(self))):
-            # if user didn't pass a list of dataframes for the clusters
+        for i in tqdm(range(len(self)), desc='Analyzing particles', leave=True):
             if cluster_dfs == None:
                 clusters, cluster_df = self.analyze_particles(self.cleaned[i], blobs)
                 # if the user wants to save the dataframes and clusters
@@ -396,7 +405,7 @@ class cspy_stack(np.ndarray):
                     try:
                         cluster_df.to_csv(os.path.join(save_dir, str(im_titles[i]) + '.csv'))
                     except (NameError, ValueError, FileNotFoundError):
-                        print('Please provide valid directory for the dataframes to be saved to.')
+                        print('Please provide valid directory for particle dataframes to be saved to.')
             # if the user did pass a list of dataframes
             else:
                 try:
@@ -406,7 +415,7 @@ class cspy_stack(np.ndarray):
                     return print(
                         'Please pass a list of cluster dataframes corresponding to each image in the experiment.'
                         '\nAlternatively, pass cluster_dfs=None to autogenerate them.'
-                        '\n Note: this will not return or save the individual cluster dataframes.')
+                        '\n Note: this will not return or save the particle dataframes for each image.')
 
             # pull the cluster data out of the dataframe
             cl_area = cluster_df['Area']
@@ -450,13 +459,14 @@ class cspy_stack(np.ndarray):
 
 if __name__ == '__main__':
     # os.chdir('C:/Users/Adam/OneDrive - University of Louisville/School/Masters Thesis/0.01 Temp6')
-    os.chdir('C:/Users/Adam/Desktop/NASA Data/ACET12/')
-    stack = cspy_stack(*load('vector 210511.tif'))
+    os.chdir('C:/Users/Adam/Desktop/NASA Data/ACET12/DR5_20C/Y107/')
+    stack = cspy_stack(*load('20210419_235551.667_CnFcl_ACET12_S2020_C2_X40_DR5_20C_Y107_uM_-2610_00060.tiff'))
     # stack.add_cropped()
     # stack.add_local_threshold(block_size=151, offset=1, cutoff=3)
     stack.add_otsu()
     stack.add_cleaned(stack.binary_otsu)
     stack.find_particles(stack.cleaned, min_distance=3)
+    io.imshow(stack.particles[0], cmap='gray')
     # io.imshow(stack.view_particles(stack[0], stack.particles[0], weight=1))
     # from colloidspy.analyze import analyze_clusters
     # import seaborn as sns
