@@ -22,7 +22,6 @@ from skimage.segmentation import watershed
 from scipy import ndimage, stats
 import matplotlib.pyplot as plt
 from matplotlib.widgets import RectangleSelector
-from scipy import ndimage
 from tqdm import tqdm
 
 
@@ -42,7 +41,34 @@ def load(path, conserve_memory=True):
         return img_as_ubyte(stack), stack.files
 
 
-class cspy_stack(np.ndarray):
+def view_particles(img, particles, min_area=0, fill=False, weight=0):
+    if 'bool' in str(type(img[0][0])):
+        clusters = cv2.cvtColor(np.zeros(img.shape, np.uint8), cv2.COLOR_GRAY2RGB)
+    else:
+        clusters = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+    for particle in np.unique(particles):
+        # if the label is zero, we are examining the 'background', so ignore it
+        if particle == 0:
+            continue
+        # otherwise, allocate memory for the label region and draw it on the mask
+        mask = np.zeros(img.shape, np.uint8)
+        mask[particles == particle] = 255
+        # detect contours in the mask and grab the largest one
+        try:
+            cnts, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        except ValueError:
+            ct_im, cnts, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if cv2.contourArea(cnts[0]) < min_area:
+            continue
+        if fill:
+            cv2.drawContours(clusters, cnts, 0, (255, 255, 255), -1)
+            cv2.drawContours(clusters, cnts, 0, (255, 0, 0), weight)
+        else:
+            cv2.drawContours(clusters, cnts, 0, (255, 0, 0), weight)
+    return clusters
+
+
+class CspyStack(np.ndarray):
     def __new__(cls, input_array, filenames=None, cropped=None, crop_coords=None, binary_otsu=None, binary_loc=None,
                 binary_hyst=None, cleaned=None, particles=None, particle_data=None):
         obj = np.asarray(input_array).view(cls)
@@ -106,7 +132,7 @@ class cspy_stack(np.ndarray):
             plt.connect('key_press_event', toggle_selector)
             plt.show()
             keyboardClick = False
-            while keyboardClick != True:
+            while not keyboardClick:
                 keyboardClick = plt.waitforbuttonpress()
             plt.close(fig)
 
@@ -124,10 +150,10 @@ class cspy_stack(np.ndarray):
         tpleft = [self.crop_coords[0][1], self.crop_coords[0][0]]
         btmright = [self.crop_coords[1][1], self.crop_coords[1][0]]
         if len(self.shape) == 3:
-            self.cropped = cspy_stack(
+            self.cropped = CspyStack(
                 [self[i][tpleft[0]:btmright[0], tpleft[1]:btmright[1]] for i in range(len(self))])
         elif len(self.shape) == 2:
-            img_rois = cspy_stack(self[tpleft[0]:btmright[0], tpleft[1]:btmright[1]])
+            self.cropped = CspyStack(self[tpleft[0]:btmright[0], tpleft[1]:btmright[1]])
         else:
             raise Exception
 
@@ -137,11 +163,11 @@ class cspy_stack(np.ndarray):
                 self.binary_otsu = []
                 for i in tqdm(range(len(self)), desc='Applying otsu threshold to cspy_stack.binary_otsu', leave=True):
                     otsu = filters.threshold_otsu(self[i], nbins=nbins)
-                    self.binary_otsu.append(self[i] > otsu)
+                    self.binary_otsu.append(img_as_ubyte(self[i] > otsu))
             elif len(self.shape) == 2:
                 print('Applying otsu threshold to cspy_stack.binary_otsu')
                 otsu = filters.threshold_otsu(self, nbins=nbins)
-                self.binary_otsu = self > otsu
+                self.binary_otsu = img_as_ubyte(self > otsu)
             else:
                 raise Exception
         else:
@@ -149,11 +175,11 @@ class cspy_stack(np.ndarray):
                 self.binary_otsu = []
                 for i in tqdm(range(len(self)), desc='Applying otsu threshold to cspy_stack.binary_otsu', leave=True):
                     otsu = filters.threshold_otsu(self.cropped[i], nbins=nbins)
-                    self.binary_otsu.append(self.cropped[i] > otsu)
+                    self.binary_otsu.append(img_as_ubyte(self.cropped[i] > otsu))
             elif len(self.shape) == 2:
                 print('Applying otsu threshold to cspy_stack.binary_otsu')
                 otsu = filters.threshold_otsu(self.cropped, nbins=nbins)
-                self.binary_otsu = self.cropped > otsu
+                self.binary_otsu = img_as_ubyte(self.cropped > otsu)
             else:
                 raise Exception
 
@@ -165,13 +191,13 @@ class cspy_stack(np.ndarray):
                     local_thresh = filters.threshold_local(self[i], block_size=block_size, offset=offset, **kwargs)
                     low_val_flags = local_thresh < cutoff
                     local_thresh[low_val_flags] = 255
-                    self.binary_loc.append(self[i] > local_thresh)
+                    self.binary_loc.append(img_as_ubyte(self[i] > local_thresh))
             elif len(self.shape) == 2:
                 print('Applying local threshold to cspy_stack.binary_loc')
                 local_thresh = filters.threshold_local(self, block_size=block_size, offset=offset, **kwargs)
                 low_val_flags = local_thresh < cutoff
                 local_thresh[low_val_flags] = 255
-                self.binary_loc = self > local_thresh
+                self.binary_loc = img_as_ubyte(self > local_thresh)
             else:
                 raise Exception
         else:
@@ -181,15 +207,16 @@ class cspy_stack(np.ndarray):
                     local_thresh = filters.threshold_local(self.cropped[i], block_size=block_size, offset=offset, **kwargs)
                     low_val_flags = local_thresh < cutoff
                     local_thresh[low_val_flags] = 255
-                    self.binary_loc.append(self.cropped[i] > local_thresh)
+                    self.binary_loc.append(img_as_ubyte(self.cropped[i] > local_thresh))
             elif len(self.shape) == 2:
                 print('Applying local threshold to cspy_stack.binary_loc')
                 local_thresh = filters.threshold_local(self.cropped, block_size=block_size, offset=offset, **kwargs)
                 low_val_flags = local_thresh < cutoff
                 local_thresh[low_val_flags] = 255
-                self.binary_loc = self.cropped > local_thresh
+                self.binary_loc = img_as_ubyte(self.cropped > local_thresh)
             else:
                 raise Exception
+        # self.binary_loc = self.binary_loc.astype(np.uint8)
 
     def add_hysteresis_threshold(self, low=20, high=150):
         if self.cropped is None:
@@ -219,10 +246,10 @@ class cspy_stack(np.ndarray):
         if len(self.shape) == 3:
             self.cleaned = []
             for i in tqdm(range(len(self)), desc='Adding cleaned to cspy_stack.cleaned', leave=True):
-                self.cleaned.append(cspy_stack(ndimage.binary_closing(ndimage.binary_opening(bin_stack[i]))))
+                self.cleaned.append(img_as_ubyte(ndimage.binary_closing(ndimage.binary_opening(bin_stack[i]))))
         elif len(self.shape) == 2:
             print('Adding cleaned to cspy_stack.cleaned')
-            self.cleaned = cspy_stack(ndimage.binary_closing(ndimage.binary_opening(bin_stack)))
+            self.cleaned = img_as_ubyte(ndimage.binary_closing(ndimage.binary_opening(bin_stack)))
         else:
             raise Exception
 
@@ -230,49 +257,27 @@ class cspy_stack(np.ndarray):
         if type(bin_stack) == list or len(bin_stack.shape) == 3:
             self.particles = []
             for i in tqdm(range(len(bin_stack)), desc='Adding detected particles to cspy_stack.particles', leave=True):
-                D = ndimage.distance_transform_edt(bin_stack[i])
-                localMax = peak_local_max(D, indices=False, min_distance=min_distance, labels=bin_stack[i])
-                markers = ndimage.label(localMax, structure=np.ones((3, 3)))[0]
-                labels = cspy_stack(watershed(-D, markers, mask=bin_stack[i]))
+                distance = ndimage.distance_transform_edt(bin_stack[i])
+                local_max = peak_local_max(distance, min_distance=min_distance, labels=bin_stack[i])
+                local_max_mask = np.zeros(distance.shape, dtype=bool)
+                local_max_mask[tuple(local_max.T)] = True
+                markers = ndimage.label(local_max_mask)[0]
+                labels = CspyStack(watershed(-distance, markers, mask=bin_stack[i]))
                 self.particles.append(labels)
         elif len(bin_stack.shape) == 2:
             print('Adding detected particles to cspy_stack.particles')
-            D = ndimage.distance_transform_edt(bin_stack)
-            localMax = peak_local_max(D, indices=False, min_distance=min_distance, labels=bin_stack)
-            markers = ndimage.label(localMax, structure=np.ones((3, 3)))[0]
-            labels = watershed(-D, markers, mask=bin_stack)
-            self.particles = cspy_stack(labels)
+            distance = ndimage.distance_transform_edt(bin_stack)
+            local_max = peak_local_max(distance, min_distance=min_distance, labels=bin_stack)
+            local_max_mask = np.zeros(distance.shape, dtype=bool)
+            local_max_mask[tuple(local_max.T)] = True
+            markers = ndimage.label(local_max_mask)[0]
+            labels = watershed(-distance, markers, mask=bin_stack)
+            self.particles = CspyStack(labels)
         else:
             raise Exception
 
-    def view_particles(self, img, particles, min_area=0, fill=False, weight=0):
-        if 'bool' in str(type(img[0][0])):
-            clusters = cv2.cvtColor(np.zeros(img.shape, np.uint8), cv2.COLOR_GRAY2RGB)
-        else:
-            clusters = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
-        for particle in np.unique(particles):
-            # if the label is zero, we are examining the 'background', so ignore it
-            if particle == 0:
-                continue
-            # otherwise, allocate memory for the label region and draw it on the mask
-            mask = np.zeros(img.shape, np.uint8)
-            mask[particles == particle] = 255
-            # detect contours in the mask and grab the largest one
-            try:
-                cnts, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            except ValueError:
-                ct_im, cnts, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            if cv2.contourArea(cnts[0]) < min_area:
-                continue
-            if fill:
-                cv2.drawContours(clusters, cnts, 0, (255, 255, 255), -1)
-                cv2.drawContours(clusters, cnts, 0, (255, 0, 0), weight)
-            else:
-                cv2.drawContours(clusters, cnts, 0, (255, 0, 0), weight)
-        return clusters
-
     def analyze_particles(self, particles, im=None, min_area=0):
-        def single(image, particles, min_area=0):
+        def single(image, particles, min_area):
             clusters = np.zeros(image.shape, np.uint8)
             cl_area = []
             cl_perimeter = []
@@ -316,12 +321,13 @@ class cspy_stack(np.ndarray):
                 if defects is not None:
                     for j in range(defects.shape[0]):
                         s, e, f, d = defects[j, 0]
-                        # start = tuple(cnt[s][0])
-                        # end = tuple(cnt[e][0])
+                        start = tuple(cnt[s][0])
+                        end = tuple(cnt[e][0])
                         far = tuple(cnt[f][0])
+                        tfar = tuple(map(int, far))
 
                         # store the length from the defects to the hull
-                        pt_defects.append(cv2.pointPolygonTest(dhull, far, True))
+                        pt_defects.append(cv2.pointPolygonTest(cnt, tfar, True))
 
                 # store the mean and stdev of the defect length
                 # if there are no defects, just store 0
@@ -348,27 +354,29 @@ class cspy_stack(np.ndarray):
             cluster_df = pd.DataFrame(cluster_data)
             return img_as_ubyte(clusters), cluster_df
 
-        if im == None:
+        if im is None:
             # single returns BOTH the image of clusters and dataframe as a tuple
             if len(self.shape) == 3:
-                self.particle_data = [single(self.cleaned[i], self.particles[i], min_area=min_area)[1]
-                                      for i in tqdm(range(len(self)), desc='Populating cspy_stack.particle_data', leave=True)]
+                self.particle_data = [single(self.cleaned[i], particles[i], min_area=min_area)[1]
+                                      for i in tqdm(range(len(self)),
+                                                    desc='Populating cspy_stack.particle_data', leave=True)]
             elif len(self.shape) == 2:
                 print('Populating cspy_stack.particle_data')
-                self.particle_data = single(self.cleaned)[1]
+                self.particle_data = single(self.cleaned, particles, min_area)[1]
             else:
                 raise Exception
         else:
             if len(im) == 3:
-                self.particle_data = [single(self.cleaned[i], self.particles[i], min_area=min_area)[1]
-                                      for i in tqdm(range(len(self)), desc='Populating cspy_stack.particle_data', leave=True)]
+                self.particle_data = [single(self.cleaned[i], particles[i], min_area=min_area)[1]
+                                      for i in tqdm(range(len(self)),
+                                                    desc='Populating cspy_stack.particle_data', leave=True)]
             elif len(self.shape) == 2:
                 print('Populating cspy_stack.particle_data')
-                self.particle_data = single(self.cleaned)
+                self.particle_data = single(self.cleaned, particles, min_area)
             else:
                 raise Exception
 
-    def analyze_stack(self, im_titles, cluster_dfs=None, save_dfs=False, save_ims=False, save_dir=None, imtype='tiff',
+    def analyze_stack(self, im_titles=None, save_dfs=False, save_ims=False, save_dir=None, imtype='tiff',
                       min_distance=7):
         particle_ct = []
         avg_area = []
@@ -384,38 +392,29 @@ class cspy_stack(np.ndarray):
         avg_def_len = []
         std_def_len = []
 
-        if self.cleaned == None:
+        if im_titles is None:
+            im_titles = np.arange(len(self))
+        if self.cleaned is None:
             raise Exception('Generate cleaned images first using cspy_stack.find_particles(binary_stack)'
                             '\n attributes .binary_otsu, .binary_loc, or .binary_hyst may be used')
-        if self.particles == None:
-            self.find_particles(self.cleaned)
+        if self.particles is None:
+            self.find_particles(self.cleaned, min_distance)
 
         for i in tqdm(range(len(self)), desc='Analyzing particles', leave=True):
-            if cluster_dfs == None:
-                clusters, cluster_df = self.analyze_particles(self.cleaned[i], blobs)
-                # if the user wants to save the dataframes and clusters
-                if save_ims:
-                    try:
-                        Path(str(save_dir) + '/Clusters').mkdir(parents=True, exist_ok=True)
-                        io.imsave(os.path.join(save_dir, "Clusters", im_titles[i] + '.' + imtype),
-                                  img_as_ubyte(clusters))
-                    except (NameError, ValueError, FileNotFoundError):
-                        print('Please provide valid directory for the images to be saved to.')
-                if save_dfs:
-                    try:
-                        cluster_df.to_csv(os.path.join(save_dir, str(im_titles[i]) + '.csv'))
-                    except (NameError, ValueError, FileNotFoundError):
-                        print('Please provide valid directory for particle dataframes to be saved to.')
-            # if the user did pass a list of dataframes
-            else:
+            clusters, cluster_df = self.analyze_particles(self.cleaned[i], self.particles[i])
+            # if user wants to save the dataframes and clusters
+            if save_ims:
                 try:
-                    # use the cluster dataframes passed from user
-                    cluster_df = cluster_dfs[i]
-                except (NameError, ValueError, TypeError):
-                    return print(
-                        'Please pass a list of cluster dataframes corresponding to each image in the experiment.'
-                        '\nAlternatively, pass cluster_dfs=None to autogenerate them.'
-                        '\n Note: this will not return or save the particle dataframes for each image.')
+                    Path(str(save_dir) + '/Clusters').mkdir(parents=True, exist_ok=True)
+                    io.imsave(os.path.join(save_dir, "Clusters", im_titles[i] + '.' + imtype),
+                              img_as_ubyte(clusters))
+                except (NameError, ValueError, FileNotFoundError):
+                    print('Please provide valid directory for the images to be saved to.')
+            if save_dfs:
+                try:
+                    cluster_df.to_csv(os.path.join(save_dir, str(im_titles[i]) + '.csv'))
+                except (NameError, ValueError, FileNotFoundError):
+                    print('Please provide valid directory for particle dataframes to be saved to.')
 
             # pull the cluster data out of the dataframe
             cl_area = cluster_df['Area']
@@ -438,29 +437,29 @@ class cspy_stack(np.ndarray):
             std_def_len.append(np.std(defect_len_avg))
 
         stack_data = {'Image': im_titles,
-                     'Particle Count': particle_ct,
-                     'Average Area': avg_area,
-                     'St Dev Area': std_area,
-                     'Median Area': median_area,
-                     'Mode Area': mode_area,
-                     'Range Area': range_area,
-                     'Average Perimeter': avg_peri,
-                     'St Dev Perimeter': std_peri,
-                     'Median Perimeter': median_peri,
-                     'Mode Perimeter': mode_peri,
-                     'Range Perimeter': range_peri,
-                     'Average Def. Len.': avg_def_len,
-                     'St Dev Def. Len': std_def_len
-                     }
+                      'Particle Count': particle_ct,
+                      'Average Area': avg_area,
+                      'St Dev Area': std_area,
+                      'Median Area': median_area,
+                      'Mode Area': mode_area,
+                      'Range Area': range_area,
+                      'Average Perimeter': avg_peri,
+                      'St Dev Perimeter': std_peri,
+                      'Median Perimeter': median_peri,
+                      'Mode Perimeter': mode_peri,
+                      'Range Perimeter': range_peri,
+                      'Average Def. Len.': avg_def_len,
+                      'St Dev Def. Len': std_def_len
+                      }
         stack_df = pd.DataFrame(stack_data)
 
         return stack_df
 
 
 if __name__ == '__main__':
-    # os.chdir('C:/Users/Adam/OneDrive - University of Louisville/School/Masters Thesis/0.01 Temp6')
-    os.chdir('C:/Users/Adam/Desktop/NASA Data/ACET12/DR5_20C/Y107/')
-    stack = cspy_stack(*load('20210419_235551.667_CnFcl_ACET12_S2020_C2_X40_DR5_20C_Y107_uM_-2610_00060.tiff'))
+    os.chdir('/home/adam/Documents/ACET12 2020/Temp Control/C1/X20/Week 3/SR5/Y19/')
+    # os.chdir('C:/Users/Adam/Desktop/NASA Data/ACET12/DR5_20C/Y107/')
+    stack = CspyStack(*load('20210406_132925.122_CnFcl_ACET12_S2020_C1_X20_SR5_Y19_00008.tiff'))
     # stack.add_cropped()
     # stack.add_local_threshold(block_size=151, offset=1, cutoff=3)
     stack.add_otsu()
@@ -480,3 +479,9 @@ if __name__ == '__main__':
 
 
 
+"""
+Installation bug fixes on Ubuntu:
+- opencv must be opencv-python-headless unless you go through the whole build process
+- skimage/mpl must have PyQt(5) or a similar thing installed to get matplotlib in GUI mode
+- skimage/mpl must have python-kt (TkAgg) installed for certain plotting functions
+"""
