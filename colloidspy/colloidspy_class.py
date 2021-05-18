@@ -69,6 +69,19 @@ def view_particles(img, particles, min_area=0, fill=False, weight=0):
 
 
 class CspyStack(np.ndarray):
+    """
+    Class to hold raw and process images and their respective particle data.
+    Attributes:
+        cropped - image ROI's, set with add_cropped()
+        binary_otsu - ROI's binarized with otsu threshold, set with add_otsu()
+        binary_loc - ROI's binarized with local threshold, set with add_local_threshold()
+        binary_hyst - ROI's binarized with hysteresis threshold, set with add_hysteresis_threshold()
+        cleaned - Cleaned binary ROI's, set with add_cleaned(BinaryStack) where BinaryStack is the set of binary
+                    images chosen earlier with otsu, local, or hysteresis threshold methods
+        particles - ROI where the pixels of all particles are assigned a unique integer labeled by particle
+        particle_data - pandas dataframes of particle data in each image
+        crop_coords - (x,y) coordinates of image ROI
+    """
     def __new__(cls, input_array, filenames=None, cropped=None, crop_coords=None, binary_otsu=None, binary_loc=None,
                 binary_hyst=None, cleaned=None, particles=None, particle_data=None):
         obj = np.asarray(input_array).view(cls)
@@ -96,19 +109,22 @@ class CspyStack(np.ndarray):
         self.particles = getattr(obj, 'particles', None)
         self.particle_data = getattr(obj, 'particle_data', None)
 
-    def imshow(self, cmap='gray', **kwargs):
-        plt.figure()
-        plt.imshow(self, cmap=cmap, **kwargs)
-        plt.tight_layout()
-        plt.show()
-
-    def add_cropped(self):
+    def add_cropped(self, cropall=True):
+        """
+        Interactictive image cropper, built from matplotlib.
+        Select ROI from top-left to bottom-right with mouse, press any key to accept selection except q and r
+        Sets CspyStack.cropped attribute
+        :param cropall: True - Same ROI is applied to all images in stack. False - crop all images individually
+        :return: nothing
+        """
         def line_select_callback(eclick, erelease):
             x1, y1 = eclick.xdata, eclick.ydata
             x2, y2 = erelease.xdata, erelease.ydata
-            self.crop_coords = ((int(x1), int(y1)), (int(x2), int(y2)))
+            while erelease is None:
+                pass
             print("(%3.2f, %3.2f) --> (%3.2f, %3.2f)" % (x1, y1, x2, y2))
             print(" The button you used were: %s %s" % (eclick.button, erelease.button))
+            self.crop_coords.append(((int(x1), int(y1)), (int(x2), int(y2))))
 
         def toggle_selector(event):
             print(' Key pressed.')
@@ -136,136 +152,190 @@ class CspyStack(np.ndarray):
                 keyboardClick = plt.waitforbuttonpress()
             plt.close(fig)
 
-        if len(self.shape) == 3:
-            img = self[0]
-        elif len(self.shape) == 2:
+        self.crop_coords = []
+        if len(self.shape) == 2:
             img = self
-        else:
-            raise Exception
-
-        select_roi(img)
-
-        # Crop all images in the stack
-        # Numpy's axis convention is (y,x) or (row,col)
-        tpleft = [self.crop_coords[0][1], self.crop_coords[0][0]]
-        btmright = [self.crop_coords[1][1], self.crop_coords[1][0]]
-        if len(self.shape) == 3:
-            self.cropped = CspyStack(
-                [self[i][tpleft[0]:btmright[0], tpleft[1]:btmright[1]] for i in range(len(self))])
-        elif len(self.shape) == 2:
+            select_roi(img)
+            # Crop all images in the stack
+            # Numpy's axis convention is (y,x) or (row,col)
+            tpleft = [self.crop_coords[0][0][1], self.crop_coords[0][0][0]]
+            btmright = [self.crop_coords[0][1][1], self.crop_coords[0][1][0]]
             self.cropped = CspyStack(self[tpleft[0]:btmright[0], tpleft[1]:btmright[1]])
+
+        elif len(self.shape) == 3:
+            if cropall:
+                img = self[0]
+                select_roi(img)
+                tpleft = [self.crop_coords[0][0][1], self.crop_coords[0][0][0]]
+                btmright = [self.crop_coords[0][1][1], self.crop_coords[0][1][0]]
+                self.cropped = CspyStack([self[i][tpleft[0]:btmright[0], tpleft[1]:btmright[1]]
+                                          for i in range(len(self))])
+            else:
+                cropped_imgs = []
+                for i in range(len(self)):
+                    img = self[i]
+                    select_roi(img)
+                    tpleft = [self.crop_coords[i][0][1], self.crop_coords[i][0][0]]
+                    btmright = [self.crop_coords[i][1][1], self.crop_coords[i][1][0]]
+                    cropped_imgs.append(self[i][tpleft[0]:btmright[0], tpleft[1]:btmright[1]])
+                self.cropped = CspyStack(cropped_imgs)
         else:
-            raise Exception
+            raise Exception("TypeError in add_cropped - is the stack greyscale?")
 
     def add_otsu(self, nbins=256):
+        """
+        Adds attribute binary_otsu from CspyStack.cropped if available. Otherwise, uses raw stack.
+        :param nbins: number of bins in image histogram
+        :return: nothing
+        """
         if self.cropped is None:
             if len(self.shape) == 3:
-                self.binary_otsu = []
-                for i in tqdm(range(len(self)), desc='Applying otsu threshold to cspy_stack.binary_otsu', leave=True):
+                binary = []
+                for i in tqdm(range(len(self)), desc='Applying otsu threshold to CspyStack.binary_otsu', leave=True):
                     otsu = filters.threshold_otsu(self[i], nbins=nbins)
-                    self.binary_otsu.append(img_as_ubyte(self[i] > otsu))
+                    binary.append(img_as_ubyte(self[i] > otsu))
+                self.binary_otsu = CspyStack(binary)
             elif len(self.shape) == 2:
-                print('Applying otsu threshold to cspy_stack.binary_otsu')
+                print('Applying otsu threshold to CspyStack.binary_otsu')
                 otsu = filters.threshold_otsu(self, nbins=nbins)
-                self.binary_otsu = img_as_ubyte(self > otsu)
+                self.binary_otsu = CspyStack(img_as_ubyte(self > otsu))
             else:
                 raise Exception
         else:
             if len(self.shape) == 3:
-                self.binary_otsu = []
-                for i in tqdm(range(len(self)), desc='Applying otsu threshold to cspy_stack.binary_otsu', leave=True):
+                binary = []
+                for i in tqdm(range(len(self)), desc='Applying otsu threshold to CspyStack.binary_otsu', leave=True):
                     otsu = filters.threshold_otsu(self.cropped[i], nbins=nbins)
-                    self.binary_otsu.append(img_as_ubyte(self.cropped[i] > otsu))
+                    binary.append(img_as_ubyte(self.cropped[i] > otsu))
+                self.binary_otsu = CspyStack(binary)
             elif len(self.shape) == 2:
-                print('Applying otsu threshold to cspy_stack.binary_otsu')
+                print('Applying otsu threshold to CspyStack.binary_otsu')
                 otsu = filters.threshold_otsu(self.cropped, nbins=nbins)
-                self.binary_otsu = img_as_ubyte(self.cropped > otsu)
+                self.binary_otsu = CspyStack(img_as_ubyte(self.cropped > otsu))
             else:
-                raise Exception
+                raise Exception('TypeError: shape of images not correct. Is stack greyscale?')
 
     def add_local_threshold(self, block_size=71, offset=5, cutoff=0, **kwargs):
+        """
+        Adds attribute binary_loc from CspyStack.cropped if available. Otherwise, uses raw stack.
+        See https://scikit-image.org/docs/stable/api/skimage.filters.html#skimage.filters.threshold_local
+        :param block_size: Odd size of pixel neighborhood which is used to calculate the threshold value
+        :param offset: Constant subtracted from weighted mean of neighborhood to calculate the local threshold value.
+        :param cutoff: lowest pixel value in gaussian image to be considered in threshold. Useful if large black areas
+                        are showing up as white areas in the thresholded image
+        :param kwargs: other kwargs from skimage threshold_local() function
+        :return:
+        """
         if self.cropped is None:
             if len(self.shape) == 3:
-                self.binary_loc = []
-                for i in tqdm(range(len(self)), desc='Applying local threshold to cspy_stack.binary_loc', leave=True):
+                binary = []
+                for i in tqdm(range(len(self)), desc='Applying local threshold to CspyStack.binary_loc', leave=True):
                     local_thresh = filters.threshold_local(self[i], block_size=block_size, offset=offset, **kwargs)
                     low_val_flags = local_thresh < cutoff
                     local_thresh[low_val_flags] = 255
-                    self.binary_loc.append(img_as_ubyte(self[i] > local_thresh))
+                    binary.append(img_as_ubyte(self[i] > local_thresh))
+                self.binary_loc = CspyStack(binary)
             elif len(self.shape) == 2:
-                print('Applying local threshold to cspy_stack.binary_loc')
+                print('Applying local threshold to CspyStack.binary_loc')
                 local_thresh = filters.threshold_local(self, block_size=block_size, offset=offset, **kwargs)
                 low_val_flags = local_thresh < cutoff
                 local_thresh[low_val_flags] = 255
-                self.binary_loc = img_as_ubyte(self > local_thresh)
+                self.binary_loc = CspyStack(img_as_ubyte(self > local_thresh))
             else:
-                raise Exception
+                raise Exception('TypeError: shape of images not correct. Is stack greyscale?')
         else:
             if len(self.shape) == 3:
-                self.binary_loc = []
-                for i in tqdm(range(len(self)), desc='Applying local threshold to cspy_stack.binary_loc', leave=True):
+                binary = []
+                for i in tqdm(range(len(self)), desc='Applying local threshold to CspyStack.binary_loc', leave=True):
                     local_thresh = filters.threshold_local(self.cropped[i], block_size=block_size, offset=offset, **kwargs)
                     low_val_flags = local_thresh < cutoff
                     local_thresh[low_val_flags] = 255
-                    self.binary_loc.append(img_as_ubyte(self.cropped[i] > local_thresh))
+                    binary.append(img_as_ubyte(self.cropped[i] > local_thresh))
+                self.binary_loc = CspyStack(binary)
             elif len(self.shape) == 2:
-                print('Applying local threshold to cspy_stack.binary_loc')
+                print('Applying local threshold to CspyStack.binary_loc')
                 local_thresh = filters.threshold_local(self.cropped, block_size=block_size, offset=offset, **kwargs)
                 low_val_flags = local_thresh < cutoff
                 local_thresh[low_val_flags] = 255
-                self.binary_loc = img_as_ubyte(self.cropped > local_thresh)
+                self.binary_loc = CspyStack(img_as_ubyte(self.cropped > local_thresh))
             else:
-                raise Exception
-        # self.binary_loc = self.binary_loc.astype(np.uint8)
+                raise Exception('TypeError: shape of images not correct. Is stack greyscale?')
 
     def add_hysteresis_threshold(self, low=20, high=150):
+        """
+        Adds attribute binary_hyst from CspyStack.cropped if available, otherwise uses raw stack.
+        See https://scikit-image.org/docs/dev/auto_examples/filters/plot_hysteresis.html
+        Pixels above the high theshold are considered to be a particle, pixels between low and high values are only
+        considered part of a particle if they touch another particle that was designated as a particle.
+        :param low: lowest pixel value to be considered as part of a potential particle
+        :param high: pixel values higher than this threshold area always considered a particle
+        :return: nothing
+        """
         if self.cropped is None:
             if len(self.shape) == 3:
-                self.binary_hyst = []
+                binary = []
                 for i in tqdm(range(len(self)),
-                              desc='Applying hysteresis threshold to cspy_stack.binary_hyst', leave=True):
-                    self.binary_hyst.append(filters.apply_hysteresis_threshold(self[i], low=low, high=high))
+                              desc='Applying hysteresis threshold to CspyStack.binary_hyst', leave=True):
+                    binary.append(filters.apply_hysteresis_threshold(self[i], low=low, high=high))
+                self.binary_hyst = CspyStack(binary)
             elif len(self.shape) == 2:
-                print('Applying hysteresis threshold to cspy_stack.binary_hyst')
-                self.binary_hyst = filters.apply_hysteresis_threshold(self, low=low, high=high)
+                print('Applying hysteresis threshold to CspyStack.binary_hyst')
+                self.binary_hyst = CspyStack(filters.apply_hysteresis_threshold(self, low=low, high=high))
             else:
-                raise Exception
+                raise Exception('TypeError: shape of images not correct. Is stack greyscale?')
         else:
             if len(self.shape) == 3:
-                self.binary_hyst = []
+                binary = []
                 for i in tqdm(range(len(self)),
-                              desc='Applying hysteresis threshold to cspy_stack.binary_hyst', leave=True):
-                    self.binary_hyst.append(filters.apply_hysteresis_threshold(self.cropped[i], low=low, high=high))
+                              desc='Applying hysteresis threshold to CspyStack.binary_hyst', leave=True):
+                    binary.append(filters.apply_hysteresis_threshold(self.cropped[i], low=low, high=high))
+                self.binary_hyst = CspyStack(binary)
             elif len(self.shape) == 2:
-                print('Applying hysteresis threshold to cspy_stack.binary_hyst')
-                self.binary_hyst = filters.apply_hysteresis_threshold(self.cropped, low=low, high=high)
+                print('Applying hysteresis threshold to CspyStack.binary_hyst')
+                self.binary_hyst = CspyStack(filters.apply_hysteresis_threshold(self.cropped, low=low, high=high))
             else:
-                raise Exception
+                raise Exception('TypeError: shape of images not correct. Is stack greyscale?')
 
     def add_cleaned(self, bin_stack):
+        """
+        Adds attribute CspyStack.cleaned
+        Removes small roughly single-pixel imperfections leaving only the major structuring elements.
+        Uses a binary opening and closing algorithm
+        :param bin_stack: binary images to clean. Use one of the three binary image attributes (otsu, loc, hyst)
+        :return:
+        """
         if len(self.shape) == 3:
             self.cleaned = []
-            for i in tqdm(range(len(self)), desc='Adding cleaned to cspy_stack.cleaned', leave=True):
+            for i in tqdm(range(len(self)), desc='Adding cleaned to CspyStack.cleaned', leave=True):
                 self.cleaned.append(img_as_ubyte(ndimage.binary_closing(ndimage.binary_opening(bin_stack[i]))))
         elif len(self.shape) == 2:
-            print('Adding cleaned to cspy_stack.cleaned')
+            print('Adding cleaned to CspyStack.cleaned')
             self.cleaned = img_as_ubyte(ndimage.binary_closing(ndimage.binary_opening(bin_stack)))
         else:
             raise Exception
 
     def find_particles(self, bin_stack, min_distance=7):
+        """
+        Adds attribute CspyStack.particles
+        Applies a watershed algorithm to the binary stack (preferably cleaned) to identify distinct particles.
+        Pixels are assigned an integer, unique by particle, where 0 is the background
+        :param bin_stack: stack of binary images with particles to detect
+        :param min_distance: minimum distance in pixels between particle centers
+        :return: nothing
+        """
         if type(bin_stack) == list or len(bin_stack.shape) == 3:
-            self.particles = []
-            for i in tqdm(range(len(bin_stack)), desc='Adding detected particles to cspy_stack.particles', leave=True):
+            particles = []
+            for i in tqdm(range(len(bin_stack)), desc='Adding detected particles to CspyStack.particles', leave=True):
                 distance = ndimage.distance_transform_edt(bin_stack[i])
                 local_max = peak_local_max(distance, min_distance=min_distance, labels=bin_stack[i])
                 local_max_mask = np.zeros(distance.shape, dtype=bool)
                 local_max_mask[tuple(local_max.T)] = True
                 markers = ndimage.label(local_max_mask)[0]
-                labels = CspyStack(watershed(-distance, markers, mask=bin_stack[i]))
-                self.particles.append(labels)
+                labels = watershed(-distance, markers, mask=bin_stack[i])
+                particles.append(labels)
+            self.particles = CspyStack(particles)
         elif len(bin_stack.shape) == 2:
-            print('Adding detected particles to cspy_stack.particles')
+            print('Adding detected particles to CspyStack.particles')
             distance = ndimage.distance_transform_edt(bin_stack)
             local_max = peak_local_max(distance, min_distance=min_distance, labels=bin_stack)
             local_max_mask = np.zeros(distance.shape, dtype=bool)
@@ -276,9 +346,16 @@ class CspyStack(np.ndarray):
         else:
             raise Exception
 
-    def analyze_particles(self, particles, im=None, min_area=0):
-        def single(image, particles, min_area):
-            clusters = np.zeros(image.shape, np.uint8)
+    def analyze_particles(self, particles, min_area=0):
+        """
+        Adds attribute CspyStack.particle_data
+        :param particles: stack of watershed images where particles are labeled by a unique integer
+        :param min_area: minimum particle area to be considered a particle
+        :return: list of pandas dataframes of particle data, or single dataframe if only one image was passed
+        """
+        def single(particles, min_area):
+            # clusters = np.zeros(image.shape, np.uint8)
+            clusters = np.zeros(particles.shape, np.uint8)
             cl_area = []
             cl_perimeter = []
             cl_center = []
@@ -291,7 +368,8 @@ class CspyStack(np.ndarray):
             for particle in np.unique(particles):
                 if particle == 0:
                     continue
-                mask = np.zeros(image.shape, np.uint8)
+                # mask = np.zeros(image.shape, np.uint8)
+                mask = np.zeros(particles.shape, np.uint8)
                 mask[particles == particle] = 255
                 try:
                     cnts, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -314,17 +392,17 @@ class CspyStack(np.ndarray):
                 # find the convex hull of the particle, and extract the defects
                 cnt = cnts[0]
                 hull = cv2.convexHull(cnt, returnPoints=False)
-                dhull = cv2.convexHull(cnt, returnPoints=True)
+                # dhull = cv2.convexHull(cnt, returnPoints=True)
                 defects = cv2.convexityDefects(cnt, hull)
 
                 pt_defects = []
                 if defects is not None:
                     for j in range(defects.shape[0]):
                         s, e, f, d = defects[j, 0]
-                        start = tuple(cnt[s][0])
-                        end = tuple(cnt[e][0])
+                        # start = tuple(cnt[s][0])
+                        # end = tuple(cnt[e][0])
                         far = tuple(cnt[f][0])
-                        tfar = tuple(map(int, far))
+                        tfar = tuple(map(int, far))  # current(?) v of opencv-python doesnt play well with np.int32
 
                         # store the length from the defects to the hull
                         pt_defects.append(cv2.pointPolygonTest(cnt, tfar, True))
@@ -354,30 +432,30 @@ class CspyStack(np.ndarray):
             cluster_df = pd.DataFrame(cluster_data)
             return img_as_ubyte(clusters), cluster_df
 
-        if im is None:
-            # single returns BOTH the image of clusters and dataframe as a tuple
-            if len(self.shape) == 3:
-                self.particle_data = [single(self.cleaned[i], particles[i], min_area=min_area)[1]
-                                      for i in tqdm(range(len(self)),
-                                                    desc='Populating cspy_stack.particle_data', leave=True)]
-            elif len(self.shape) == 2:
-                print('Populating cspy_stack.particle_data')
-                self.particle_data = single(self.cleaned, particles, min_area)[1]
-            else:
-                raise Exception
+        # single returns BOTH the image of clusters and dataframe as a tuple
+        if len(self.shape) == 3:
+            self.particle_data = [single(particles[i], min_area=min_area)[1] for i in tqdm(
+                range(len(self)), desc='Populating CspyStack.particle_data', leave=True)]
+        elif len(self.shape) == 2:
+            print('Populating CspyStack.particle_data')
+            self.particle_data = single(particles, min_area)[1]
         else:
-            if len(im) == 3:
-                self.particle_data = [single(self.cleaned[i], particles[i], min_area=min_area)[1]
-                                      for i in tqdm(range(len(self)),
-                                                    desc='Populating cspy_stack.particle_data', leave=True)]
-            elif len(self.shape) == 2:
-                print('Populating cspy_stack.particle_data')
-                self.particle_data = single(self.cleaned, particles, min_area)
-            else:
-                raise Exception
+            raise Exception
+
+        return self.particle_data
 
     def analyze_stack(self, im_titles=None, save_dfs=False, save_ims=False, save_dir=None, imtype='tiff',
                       min_distance=7):
+        """
+        analyzes full stack of images, sets particles and particle_data attributes
+        :param im_titles: optional, list of titles for each image and df to be saved with. Default is numbered from 0
+        :param save_dfs: Boolean, set to true to save dataframes in the directory provided in save_dir
+        :param save_ims: Boolean, set to true to save binary imgs of the particles in the directory provided in save_dir
+        :param save_dir: directory (string) to save df's and/or images to. Required if saving df's or images
+        :param imtype: type of image to save binary images as. Default is tiff
+        :param min_distance: minimum distance in pixels between particle centers
+        :return: single dataframe of overall particle data for each image, not saved to an attribute
+        """
         particle_ct = []
         avg_area = []
         std_area = []
@@ -401,7 +479,7 @@ class CspyStack(np.ndarray):
             self.find_particles(self.cleaned, min_distance)
 
         for i in tqdm(range(len(self)), desc='Analyzing particles', leave=True):
-            clusters, cluster_df = self.analyze_particles(self.cleaned[i], self.particles[i])
+            clusters, cluster_df = self.analyze_particles(self.particles[i])
             # if user wants to save the dataframes and clusters
             if save_ims:
                 try:
@@ -409,12 +487,12 @@ class CspyStack(np.ndarray):
                     io.imsave(os.path.join(save_dir, "Clusters", im_titles[i] + '.' + imtype),
                               img_as_ubyte(clusters))
                 except (NameError, ValueError, FileNotFoundError):
-                    print('Please provide valid directory for the images to be saved to.')
+                    print('Please provide valid directory for the images to be saved to, using kwarg save_dir')
             if save_dfs:
                 try:
                     cluster_df.to_csv(os.path.join(save_dir, str(im_titles[i]) + '.csv'))
                 except (NameError, ValueError, FileNotFoundError):
-                    print('Please provide valid directory for particle dataframes to be saved to.')
+                    print('Please provide valid directory for particle dataframes to be saved to, using kwarg save_dir')
 
             # pull the cluster data out of the dataframe
             cl_area = cluster_df['Area']
@@ -448,8 +526,8 @@ class CspyStack(np.ndarray):
                       'Median Perimeter': median_peri,
                       'Mode Perimeter': mode_peri,
                       'Range Perimeter': range_peri,
-                      'Average Def. Len.': avg_def_len,
-                      'St Dev Def. Len': std_def_len
+                      'Average Defect Len.': avg_def_len,
+                      'St Dev Defect Len': std_def_len
                       }
         stack_df = pd.DataFrame(stack_data)
 
@@ -459,24 +537,20 @@ class CspyStack(np.ndarray):
 if __name__ == '__main__':
     os.chdir('/home/adam/Documents/ACET12 2020/Temp Control/C1/X20/Week 3/SR5/Y19/')
     # os.chdir('C:/Users/Adam/Desktop/NASA Data/ACET12/DR5_20C/Y107/')
-    stack = CspyStack(*load('20210406_132925.122_CnFcl_ACET12_S2020_C1_X20_SR5_Y19_00008.tiff'))
-    # stack.add_cropped()
+    stack = CspyStack(*load('*.tiff'))
+    stack.add_cropped()
     # stack.add_local_threshold(block_size=151, offset=1, cutoff=3)
     stack.add_otsu()
     stack.add_cleaned(stack.binary_otsu)
     stack.find_particles(stack.cleaned, min_distance=3)
-    io.imshow(stack.particles[0], cmap='gray')
-    # io.imshow(stack.view_particles(stack[0], stack.particles[0], weight=1))
-    # from colloidspy.analyze import analyze_clusters
+    # io.imshow(stack.particles[0], cmap='gray')
+    # io.imshow(view_particles(stack.cropped[0], stack.particles[0], weight=1))
     # import seaborn as sns
-    stack.analyze_particles(stack.particles)
-    df = stack.particle_data[0]
-    # df['Area (um^2)'] = df['Area'] * (0.3**2)
-    # sns.displot(df, x='Area (um^2)', bins=100).set(xlim=[0, 25])
+    # df = stack.analyze_particles(stack.particles)
+    # df[0]['Area (um^2)'] = df[0]['Area'] * (0.3**2)
+    # sns.displot(df[0], x='Area (um^2)', bins=100).set(xlim=[0, 25])
     # plt.tight_layout()
-
-
-
+    overalldf = stack.analyze_stack()
 
 
 """
