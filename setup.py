@@ -11,11 +11,12 @@ requirements = [
     'scikit-image>=0.16',
     'tqdm>=4.30',
     'matplotlib>=3.3',
+    'PyQt5'
     ]
 
 setuptools.setup(
     name="colloidspy",
-    version="2021.04",
+    version="2021.05",
     author="Adam Cecil",
     author_email="ajcecil64@gmail.com",
     description="2D colloidal image analysis",

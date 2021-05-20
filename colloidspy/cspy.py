@@ -447,7 +447,7 @@ class CspyStack(np.ndarray):
 
         return self.particle_data
 
-    def analyze_stack(self, im_titles=None, save_dfs=False, save_ims=False, save_dir=None, imtype='tiff',
+    def analyze_stack(self, save_dfs=False, save_ims=False, save_dir=None, im_titles=None, imtype='tiff',
                       min_distance=7):
         """
         analyzes full stack of images, sets particles and particle_data attributes
