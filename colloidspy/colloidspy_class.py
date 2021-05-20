@@ -22,6 +22,7 @@ from skimage.segmentation import watershed
 from scipy import ndimage, stats
 import matplotlib.pyplot as plt
 from matplotlib.widgets import RectangleSelector
+# %matplotlib qt
 from tqdm import tqdm
 
 
@@ -147,6 +148,8 @@ class CspyStack(np.ndarray):
                                                    interactive=True)
             plt.connect('key_press_event', toggle_selector)
             plt.show()
+            # # some IDE's (pycharm, jupyter) move on to plt.close(fig) instead of waiting for the callback to finish
+            # # if that is the case, uncomment the next three lines
             keyboardClick = False
             while not keyboardClick:
                 keyboardClick = plt.waitforbuttonpress()
@@ -470,6 +473,8 @@ class CspyStack(np.ndarray):
         avg_def_len = []
         std_def_len = []
 
+        print('Analyzing particles...')
+
         if im_titles is None:
             im_titles = np.arange(len(self))
         if self.cleaned is None:
@@ -478,14 +483,17 @@ class CspyStack(np.ndarray):
         if self.particles is None:
             self.find_particles(self.cleaned, min_distance)
 
-        for i in tqdm(range(len(self)), desc='Analyzing particles', leave=True):
-            clusters, cluster_df = self.analyze_particles(self.particles[i])
+        if self.particle_data is None:
+            self.analyze_particles(self.particles)
+
+        for i in tqdm(range(len(self)), desc='Saving particles and creating Summary', leave=True):
+            cluster_df = self.particle_data[i]
             # if user wants to save the dataframes and clusters
             if save_ims:
                 try:
                     Path(str(save_dir) + '/Clusters').mkdir(parents=True, exist_ok=True)
                     io.imsave(os.path.join(save_dir, "Clusters", im_titles[i] + '.' + imtype),
-                              img_as_ubyte(clusters))
+                              img_as_ubyte(self.cleaned[i]))
                 except (NameError, ValueError, FileNotFoundError):
                     print('Please provide valid directory for the images to be saved to, using kwarg save_dir')
             if save_dfs:
@@ -533,29 +541,36 @@ class CspyStack(np.ndarray):
 
         return stack_df
 
+    def rdf(self, ind, res=300):
+        """
+        Calculates the 2D radial distribution function from the image at the index provided
+        Returns a tuple: (distance/avg particle radius, rdf)
+        """
+        def distmatrix(centers):
+            # makes an nxn matrix of distances between every cluster.
+            # Diagonals are 0, upper and lower triangles are mirror images because distance from particle 2-1 is same as 1-2
+            from scipy.spatial.distance import cdist
+            return cdist(centers, centers, metric='euclidean')
+        
+        image = self.cleaned[ind]
+        data = self.particle_data[ind]
+        height, width = np.shape(image)
+        n = len(data)
+        distmat = distmatrix(data.Center.tolist())
+        sigma = np.sqrt((np.mean(data.Area)/np.pi))
 
-if __name__ == '__main__':
-    os.chdir('/home/adam/Documents/ACET12 2020/Temp Control/C1/X20/Week 3/SR5/Y19/')
-    # os.chdir('C:/Users/Adam/Desktop/NASA Data/ACET12/DR5_20C/Y107/')
-    stack = CspyStack(*load('*.tiff'))
-    stack.add_cropped()
-    # stack.add_local_threshold(block_size=151, offset=1, cutoff=3)
-    stack.add_otsu()
-    stack.add_cleaned(stack.binary_otsu)
-    stack.find_particles(stack.cleaned, min_distance=3)
-    # io.imshow(stack.particles[0], cmap='gray')
-    # io.imshow(view_particles(stack.cropped[0], stack.particles[0], weight=1))
-    # import seaborn as sns
-    # df = stack.analyze_particles(stack.particles)
-    # df[0]['Area (um^2)'] = df[0]['Area'] * (0.3**2)
-    # sns.displot(df[0], x='Area (um^2)', bins=100).set(xlim=[0, 25])
-    # plt.tight_layout()
-    overalldf = stack.analyze_stack()
-
-
-"""
-Installation bug fixes on Ubuntu:
-- opencv must be opencv-python-headless unless you go through the whole build process
-- skimage/mpl must have PyQt(5) or a similar thing installed to get matplotlib in GUI mode
-- skimage/mpl must have python-kt (TkAgg) installed for certain plotting functions
-"""
+        # g(r) = <n>/dA = local density / bulk density
+        d = np.sqrt(width**2 + height**2)
+        bulk_density = n / (height*width)
+        dn, edges = np.histogram(distmat[np.triu_indices(n, 1)], bins=res)
+        da = np.pi * (edges[1:]**2 - edges[:-1]**2)
+        loc_density = dn/da
+        gr = loc_density/bulk_density
+        plt.figure()
+        plt.plot(edges[1:]/sigma, gr)
+        plt.ylabel('g(r)')
+        plt.xlabel('Distances/average particle radius')
+        plt.xlim(0, d/sigma)
+        plt.show()
+        
+        return edges[1:]/sigma, gr
