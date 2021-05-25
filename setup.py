@@ -5,6 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 def get_reqs():
     import sys
+    import importlib.util
     requirements = [
         'numpy>=1.18',
         'pandas>=1.2',
@@ -14,12 +15,13 @@ def get_reqs():
         'matplotlib>=3.3',
         'PyQt5'
         ]
+    
+    if importlib.util.find_spec('cv2') is not None:
+        if sys.platform == "linux":
+            requirements.append('opencv-python-headless')
+        else:
 
-    if sys.platform == "linux":
-        requirements.append('opencv-python-headless')
-    else:
-
-        requirements.append('opencv-python>=4')
+            requirements.append('opencv-python>=4')
 
     return requirements
 
