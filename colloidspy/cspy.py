@@ -486,22 +486,28 @@ class CspyStack(np.ndarray):
         if self.particle_data is None:
             self.analyze_particles(self.particles)
 
-        if save_dir is None:
-            save_dir = ''
-
-        for i in tqdm(range(len(self)), desc='Saving particles and creating Summary', leave=True):
+        for i in tqdm(range(len(self)), desc='Saving particles and creating summary', leave=True):
             cluster_df = self.particle_data[i]
             # if user wants to save the dataframes and clusters
             if save_ims:
                 try:
-                    Path(str(save_dir) + '/Clusters').mkdir(parents=True, exist_ok=True)
-                    io.imsave(os.path.join(save_dir, "Clusters", str(im_titles[i]) + '.' + imtype),
-                              img_as_ubyte(self.cleaned[i]))
+                    if save_dir is None:
+                        Path('Clusters').mkdir(parents=True, exist_ok=True)
+                        io.imsave(os.path.join("Clusters", str(im_titles[i]) + '.' + imtype),
+                                img_as_ubyte(self.cleaned[i]))                    
+                    else:
+                            Path(str(save_dir) + '/Clusters').mkdir(parents=True, exist_ok=True)
+                            io.imsave(os.path.join(save_dir, "Clusters", str(im_titles[i]) + '.' + imtype),
+                                        img_as_ubyte(self.cleaned[i]))
                 except (NameError, ValueError, FileNotFoundError):
                     print('Please provide valid directory for the images to be saved to, using kwarg save_dir')
             if save_dfs:
                 try:
-                    cluster_df.to_csv(os.path.join(save_dir, str(im_titles[i]) + '.csv'))
+                    if save_dir is None:
+                        Path('Data').mkdir(parents=True, exist_ok=True)
+                        cluster_df.to_csv(os.path.join('Data', str(im_titles[i]) + '.csv'))
+                    else:
+                        cluster_df.to_csv(os.path.join(save_dir, 'Data', str(im_titles[i]) + '.csv'))
                 except (NameError, ValueError, FileNotFoundError):
                     print('Please provide valid directory for particle dataframes to be saved to, using kwarg save_dir')
 
