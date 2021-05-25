@@ -1,4 +1,5 @@
 import setuptools
+import sys
 
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
@@ -6,7 +7,8 @@ with open("README.md", "r", encoding="utf-8") as fh:
 requirements = [
     'numpy>=1.18',
     'pandas>=1.2',
-    'opencv-python>=4',
+    'opencv-python>=4'; sys.platform != "linux",
+    'opencv-python-headless'; sys.platform == "linux",
     'scipy>=1.5',
     'scikit-image>=0.16',
     'tqdm>=4.30',
