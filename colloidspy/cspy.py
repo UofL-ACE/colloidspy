@@ -486,13 +486,16 @@ class CspyStack(np.ndarray):
         if self.particle_data is None:
             self.analyze_particles(self.particles)
 
+        if save_dir is None:
+            save_dir = ''
+
         for i in tqdm(range(len(self)), desc='Saving particles and creating Summary', leave=True):
             cluster_df = self.particle_data[i]
             # if user wants to save the dataframes and clusters
             if save_ims:
                 try:
                     Path(str(save_dir) + '/Clusters').mkdir(parents=True, exist_ok=True)
-                    io.imsave(os.path.join(save_dir, "Clusters", im_titles[i] + '.' + imtype),
+                    io.imsave(os.path.join(save_dir, "Clusters", str(im_titles[i]) + '.' + imtype),
                               img_as_ubyte(self.cleaned[i]))
                 except (NameError, ValueError, FileNotFoundError):
                     print('Please provide valid directory for the images to be saved to, using kwarg save_dir')
