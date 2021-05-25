@@ -1,20 +1,27 @@
 import setuptools
-import sys
 
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
-requirements = [
-    'numpy>=1.18',
-    'pandas>=1.2',
-    'opencv-python>=4'; sys.platform != "linux",
-    'opencv-python-headless'; sys.platform == "linux",
-    'scipy>=1.5',
-    'scikit-image>=0.16',
-    'tqdm>=4.30',
-    'matplotlib>=3.3',
-    'PyQt5'
-    ]
+def get_reqs():
+    import sys
+    requirements = [
+        'numpy>=1.18',
+        'pandas>=1.2',
+        'scipy>=1.5',
+        'scikit-image>=0.16',
+        'tqdm>=4.30',
+        'matplotlib>=3.3',
+        'PyQt5'
+        ]
+
+    if sys.platform == "linux":
+        requirements.append('opencv-python-headless')
+    else:
+
+        requirements.append('opencv-python>=4')
+
+    return requirements
 
 setuptools.setup(
     name="colloidspy",
@@ -27,7 +34,7 @@ setuptools.setup(
     url="https://github.com/UofL-ACE/colloidspy",
     license='LICENSE.txt',
     packages=setuptools.find_packages(),
-    install_requires=requirements,
+    install_requires=get_reqs(),
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
